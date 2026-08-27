@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 @dataclass
 class LimitGauge:
-    """One rate-limit window (session or weekly)."""
+    """One rate-limit window (session, weekly, or a model-scoped weekly)."""
     label: str
     used_pct: float                 # 0..100
     resets_at: datetime | None = None
@@ -22,6 +22,8 @@ class LimitGauge:
 class Limits:
     session: LimitGauge | None = None
     weekly: LimitGauge | None = None
+    # Per-model weekly window (e.g. Fable), when the account has one.
+    weekly_scoped: LimitGauge | None = None
     stale: bool = False
 
 
@@ -66,6 +68,8 @@ def mock_state(now: datetime | None = None) -> HudState:
         limits=Limits(
             session=LimitGauge("SESSION", 6.0, now + timedelta(hours=4, minutes=45)),
             weekly=LimitGauge("WEEK", 38.0, now + timedelta(days=2, hours=9)),
+            weekly_scoped=LimitGauge("WEEK FABLE", 85.0,
+                                     now + timedelta(days=2, hours=9)),
         ),
         tokens=TokenStats(
             today_cost_usd=215.75,

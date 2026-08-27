@@ -41,6 +41,18 @@ def _local_naive(iso: str | None) -> datetime | None:
         return None
 
 
+_KIND_LABELS = {"session": "SESSION", "weekly_all": "WEEK"}
+
+
+def _label_for(entry: dict) -> str:
+    """Scoped windows are named by their model; the rest by kind."""
+    model = ((entry.get("scope") or {}).get("model") or {})
+    name = model.get("display_name")
+    if name:
+        return f"WEEK {name}".upper()
+    return _KIND_LABELS.get(entry.get("kind") or "", "LIMIT")
+
+
 class LimitsCollector(Collector):
     name_ = "limits"
     cadence_s = 60.0
@@ -67,10 +79,29 @@ class LimitsCollector(Collector):
             session=gauge(data.get("five_hour"), "SESSION"),
             weekly=gauge(data.get("seven_day"), "WEEK"),
         )
+        # Prefer the `limits` array where it overlaps: model-scoped weekly
+        # windows (e.g. Fable) appear only there — the flat seven_day_* keys
+        # are null for them — and it's what the desktop app and /usage show.
+        for entry in data.get("limits") or []:
+            g = LimitGauge(
+                label=_label_for(entry),
+                used_pct=float(entry.get("percent") or 0.0),
+                resets_at=_local_naive(entry.get("resets_at")),
+            )
+            kind = entry.get("kind")
+            if kind == "session":
+                limits.session = g
+            elif kind == "weekly_all":
+                limits.weekly = g
+            elif kind == "weekly_scoped":
+                limits.weekly_scoped = g
+
         self.shared.update(limits=limits)
-        log.debug("limits: session=%s weekly=%s",
+        log.debug("limits: session=%s weekly=%s scoped=%s(%s)",
                   limits.session and limits.session.used_pct,
-                  limits.weekly and limits.weekly.used_pct)
+                  limits.weekly and limits.weekly.used_pct,
+                  limits.weekly_scoped and limits.weekly_scoped.label,
+                  limits.weekly_scoped and limits.weekly_scoped.used_pct)
 
     def mark_stale(self) -> None:
         def apply(state) -> None:
