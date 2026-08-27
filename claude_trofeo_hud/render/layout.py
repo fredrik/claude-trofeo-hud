@@ -44,10 +44,7 @@ def _limits_zone(d: ImageDraw.ImageDraw, state: HudState,
     d.text((x1 - _PAD, 34), "USAGE" + (" (stale)" if lim.stale else ""),
            font=theme.sans(18), fill=color_hdr, anchor="ra")
 
-    def gauge(g: LimitGauge | None, y: int) -> None:
-        if g is None:
-            d.text((x, y), "—", font=theme.mono(22), fill=theme.FAINT)
-            return
+    def gauge(g: LimitGauge, y: int) -> None:
         color = theme.limit_color(g.used_pct)
         d.text((x, y), g.label, font=theme.sans(22), fill=theme.MUTED)
         d.text((x1 - _PAD, y - 14), f"{g.used_pct:.0f}%",
@@ -59,8 +56,16 @@ def _limits_zone(d: ImageDraw.ImageDraw, state: HudState,
                    f"resets {g.resets_at:%-I:%M %p} · {w.fmt_countdown(secs)}",
                    font=theme.mono(19), fill=theme.FAINT)
 
-    gauge(lim.session, 108)
-    gauge(lim.weekly, 258)
+    # A model-scoped weekly window (e.g. Fable) only exists on some accounts,
+    # so the stack tightens from two rows to three when one shows up.
+    gauges = [g for g in (lim.session, lim.weekly, lim.weekly_scoped)
+              if g is not None]
+    if not gauges:
+        d.text((x, 108), "—", font=theme.mono(22), fill=theme.FAINT)
+        return
+    top, step = (108, 150) if len(gauges) < 3 else (90, 104)
+    for i, g in enumerate(gauges):
+        gauge(g, top + i * step)
 
 
 def _tokens_zone(d: ImageDraw.ImageDraw, state: HudState,
